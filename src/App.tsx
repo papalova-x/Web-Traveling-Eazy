@@ -12,14 +12,19 @@ import {
   X,
   Wallet,
   Wifi,
-  WifiOff
+  WifiOff,
+  Sparkles,
+  CloudSun
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, compareAsc } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
+import { GoogleGenAI } from "@google/genai";
 import { Stop } from './types';
 import { cn } from './lib/utils';
 import { supabase } from './lib/supabase';
+
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export default function App() {
   const [stops, setStops] = useState<Stop[]>([]);
@@ -28,6 +33,13 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'route' | 'list'>('route');
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [aiInsights, setAiInsights] = useState<{
+    costs?: string;
+    weather?: string;
+    recommendations?: string;
+    tips?: string;
+  } | null>(null);
+  const [isLoadingAi, setIsLoadingAi] = useState(false);
 
   // Handle Online/Offline Status
   useEffect(() => {
@@ -149,6 +161,56 @@ export default function App() {
   const skippedStops = sortedStops.filter(s => s.status === 'skipped');
   const completedStops = sortedStops.filter(s => s.status === 'visited');
   const totalCost = stops.reduce((acc, stop) => acc + (stop.cost || 0), 0);
+
+  // AI Insights Function
+  const fetchAiInsights = async (stop: Stop) => {
+    if (!isOnline) return;
+    setIsLoadingAi(true);
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `Berikan informasi singkat dan akurat untuk wisatawan yang akan ke: ${stop.title} (${stop.address}). 
+        Gunakan Google Search untuk mendapatkan:
+        1. Estimasi biaya (tiket masuk, parkir, makan).
+        2. Prakiraan cuaca singkat atau kondisi saat ini.
+        3. 2 Rekomendasi tempat menarik/kuliner terdekat.
+        4. Tips singkat (misal: waktu terbaik berkunjung).
+        
+        PENTING: Setiap nilai dalam JSON harus berupa STRING tunggal, jangan gunakan objek bersarang.
+        Berikan jawaban dalam format JSON mentah dengan kunci: costs, weather, recommendations, tips. Jangan gunakan markdown.`,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json"
+        }
+      });
+      
+      const data = JSON.parse(response.text || '{}');
+      setAiInsights(data);
+    } catch (error) {
+      console.error("AI Insights Error:", error);
+      setAiInsights({ tips: "Gunakan Google Maps untuk informasi terbaru mengenai lokasi ini." });
+    } finally {
+      setIsLoadingAi(false);
+    }
+  };
+
+  const renderAiValue = (val: any) => {
+    if (!val) return "";
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object') {
+      return Object.values(val).join(', ');
+    }
+    return String(val);
+  };
+
+  // Trigger AI when next stop changes
+  useEffect(() => {
+    if (nextStop) {
+      fetchAiInsights(nextStop);
+    } else {
+      setAiInsights(null);
+    }
+  }, [nextStop?.id]);
 
   if (isLoading && stops.length === 0) {
     return (
@@ -388,6 +450,79 @@ export default function App() {
               </div>
             </div>
           )}
+
+          {/* AI Smart Insights Section */}
+          <AnimatePresence>
+            {nextStop && (isOnline || aiInsights) && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.95 }}
+                className="bg-indigo-600 rounded-3xl p-6 text-white shadow-xl shadow-indigo-100 relative overflow-hidden"
+              >
+                <div className="absolute -right-4 -top-4 opacity-10">
+                  <Sparkles size={120} />
+                </div>
+                
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="p-1.5 bg-white/20 rounded-lg">
+                    <Sparkles size={16} className="text-white" />
+                  </div>
+                  <h3 className="text-sm font-bold uppercase tracking-widest">AI Smart Guide</h3>
+                  {isLoadingAi && (
+                    <motion.div 
+                      animate={{ opacity: [0.4, 1, 0.4] }}
+                      transition={{ repeat: Infinity, duration: 1.5 }}
+                      className="ml-auto text-[10px] font-bold bg-white/10 px-2 py-0.5 rounded"
+                    >
+                      Mencari Info Terbaru...
+                    </motion.div>
+                  )}
+                </div>
+
+                {aiInsights ? (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-3">
+                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
+                        <div className="flex items-center gap-2 mb-1">
+                          <Wallet size={12} className="text-indigo-200" />
+                          <span className="text-[10px] font-bold uppercase text-indigo-100">Estimasi Biaya</span>
+                        </div>
+                        <p className="text-xs leading-relaxed">{renderAiValue(aiInsights.costs) || "Cek tiket masuk di lokasi."}</p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CloudSun size={12} className="text-indigo-200" />
+                          <span className="text-[10px] font-bold uppercase text-indigo-100">Cuaca & Kondisi</span>
+                        </div>
+                        <p className="text-xs leading-relaxed">{renderAiValue(aiInsights.weather) || "Siapkan payung untuk berjaga-jaga."}</p>
+                      </div>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
+                        <div className="flex items-center gap-2 mb-1">
+                          <MapPin size={12} className="text-indigo-200" />
+                          <span className="text-[10px] font-bold uppercase text-indigo-100">Rekomendasi</span>
+                        </div>
+                        <p className="text-xs leading-relaxed">{renderAiValue(aiInsights.recommendations) || "Jelajahi area sekitar."}</p>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CheckCircle2 size={12} className="text-indigo-200" />
+                          <span className="text-[10px] font-bold uppercase text-indigo-100">Tips Cepat</span>
+                        </div>
+                        <p className="text-xs leading-relaxed italic">"{renderAiValue(aiInsights.tips)}"</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="py-8 text-center">
+                    <p className="text-xs text-indigo-100 font-medium">Menghubungkan ke Google AI untuk panduan perjalanan Anda...</p>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Right Column: Timeline */}
