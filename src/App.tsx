@@ -12,22 +12,14 @@ import {
   X,
   Wallet,
   Wifi,
-  WifiOff,
-  Sparkles,
-  CloudSun,
-  RefreshCw
+  WifiOff
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, compareAsc } from 'date-fns';
 import { id as idLocale } from 'date-fns/locale';
-import { GoogleGenAI } from "@google/genai";
 import { Stop } from './types';
 import { cn } from './lib/utils';
 import { supabase } from './lib/supabase';
-
-const ai = new GoogleGenAI({ 
-  apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" 
-});
 
 export default function App() {
   const [stops, setStops] = useState<Stop[]>([]);
@@ -36,13 +28,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'route' | 'list'>('route');
   const [isLoading, setIsLoading] = useState(true);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [aiInsights, setAiInsights] = useState<{
-    costs?: string;
-    weather?: string;
-    recommendations?: string;
-    tips?: string;
-  } | null>(null);
-  const [isLoadingAi, setIsLoadingAi] = useState(false);
 
   // Handle Online/Offline Status
   useEffect(() => {
@@ -164,102 +149,6 @@ export default function App() {
   const skippedStops = sortedStops.filter(s => s.status === 'skipped');
   const completedStops = sortedStops.filter(s => s.status === 'visited');
   const totalCost = stops.reduce((acc, stop) => acc + (stop.cost || 0), 0);
-
-  // AI Insights Function
-  const fetchAiInsights = async (stop: Stop, force = false) => {
-    // 1. Check Cache First (unless forced)
-    const cacheKey = `ai_cache_${stop.id}`;
-    if (!force) {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        setAiInsights(JSON.parse(cached));
-        return;
-      }
-    }
-
-    // 2. If Offline and no cache, use Smart Fallback
-    if (!isOnline) {
-      const fallback = getSmartFallback(stop.title);
-      setAiInsights(fallback);
-      return;
-    }
-
-    // 3. If Online, fetch from Gemini
-    setIsLoadingAi(true);
-    try {
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: `Analisis mendalam untuk wisatawan ke: ${stop.title} (${stop.address}). 
-        Gunakan Google Search untuk memberikan data RIIL dan TERBARU:
-        1. costs: Estimasi biaya tiket masuk (jika ada), parkir, dan rata-rata harga makan per orang.
-        2. weather: Kondisi cuaca saat ini di lokasi tersebut dan saran pakaian.
-        3. recommendations: Sebutkan 2 nama tempat makan atau spot menarik spesifik di dekat sana.
-        4. tips: Berikan 1 tips unik yang hanya diketahui orang lokal tentang tempat ini.
-        
-        PENTING: Jawab dalam Bahasa Indonesia. Setiap nilai harus STRING tunggal.
-        Berikan jawaban dalam format JSON mentah dengan kunci: costs, weather, recommendations, tips. Jangan gunakan markdown.`,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json"
-        }
-      });
-      
-      const text = response.text || '{}';
-      const data = JSON.parse(text);
-      const finalData = { ...data, isFallback: false };
-      setAiInsights(finalData);
-      localStorage.setItem(cacheKey, JSON.stringify(finalData));
-    } catch (error) {
-      console.error("AI Insights Error:", error);
-      const fallback = getSmartFallback(stop.title);
-      setAiInsights(fallback);
-    } finally {
-      setIsLoadingAi(false);
-    }
-  };
-
-  const getSmartFallback = (title: string) => {
-    const t = title.toLowerCase();
-    let tips = "Siapkan peta offline dan air minum.";
-    let costs = "Siapkan uang tunai untuk parkir/jajan.";
-    
-    if (t.includes('pantai')) {
-      tips = "Bawa sunblock, baju ganti, dan kacamata hitam.";
-      costs = "Biasanya ada biaya parkir & sewa payung.";
-    } else if (t.includes('candi') || t.includes('museum')) {
-      tips = "Gunakan sepatu nyaman dan bawa topi.";
-      costs = "Siapkan biaya tiket masuk (biasanya Rp 20rb - 100rb).";
-    } else if (t.includes('makan') || t.includes('resto') || t.includes('kuliner')) {
-      tips = "Cek ulasan terbaru untuk menu andalan.";
-      costs = "Estimasi Rp 50rb - 150rb per orang.";
-    }
-
-    return {
-      costs,
-      weather: "Cek langit secara manual (Mode Offline)",
-      recommendations: "Tanya warga lokal untuk spot terbaik.",
-      tips,
-      isFallback: true
-    };
-  };
-
-  const renderAiValue = (val: any) => {
-    if (!val) return "";
-    if (typeof val === 'string') return val;
-    if (typeof val === 'object') {
-      return Object.values(val).join(', ');
-    }
-    return String(val);
-  };
-
-  // Trigger AI when next stop changes
-  useEffect(() => {
-    if (nextStop) {
-      fetchAiInsights(nextStop);
-    } else {
-      setAiInsights(null);
-    }
-  }, [nextStop?.id]);
 
   if (isLoading && stops.length === 0) {
     return (
@@ -499,108 +388,6 @@ export default function App() {
               </div>
             </div>
           )}
-
-          {/* AI Smart Insights Section */}
-          <AnimatePresence>
-            {nextStop && (isOnline || aiInsights) && (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="bg-indigo-600 rounded-3xl p-6 text-white shadow-xl shadow-indigo-100 relative overflow-hidden"
-              >
-                <div className="absolute -right-4 -top-4 opacity-10">
-                  <Sparkles size={120} />
-                </div>
-                
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="p-1.5 bg-white/20 rounded-lg">
-                    <Sparkles size={16} className="text-white" />
-                  </div>
-                  <h3 className="text-sm font-bold uppercase tracking-widest">AI Smart Guide</h3>
-                  <div className="ml-auto flex items-center gap-2">
-                    {isLoadingAi ? (
-                      <motion.div 
-                        animate={{ opacity: [0.4, 1, 0.4] }}
-                        transition={{ repeat: Infinity, duration: 1.5 }}
-                        className="text-[10px] font-bold bg-white/10 px-2 py-0.5 rounded"
-                      >
-                        Mencari...
-                      </motion.div>
-                    ) : (
-                      <>
-                        {!isOnline ? (
-                          <div className="text-[8px] font-bold bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded border border-amber-500/30 uppercase">
-                            Offline
-                          </div>
-                        ) : aiInsights?.isFallback ? (
-                          <div className="text-[8px] font-bold bg-red-500/20 text-red-200 px-2 py-0.5 rounded border border-red-500/30 uppercase">
-                            Data Dasar
-                          </div>
-                        ) : (
-                          <div className="text-[8px] font-bold bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30 uppercase">
-                            AI Aktif
-                          </div>
-                        )}
-                        <button 
-                          onClick={() => fetchAiInsights(nextStop, true)}
-                          disabled={isLoadingAi || !isOnline}
-                          className="p-1 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-30"
-                          title="Perbarui info AI"
-                        >
-                          <RefreshCw size={14} className={cn(isLoadingAi && "animate-spin")} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {aiInsights ? (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-3">
-                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                        <div className="flex items-center gap-2 mb-1">
-                          <Wallet size={12} className="text-indigo-200" />
-                          <span className="text-[10px] font-bold uppercase text-indigo-100">Estimasi Biaya</span>
-                        </div>
-                        <p className="text-xs leading-relaxed">{renderAiValue(aiInsights.costs) || "Cek tiket masuk di lokasi."}</p>
-                      </div>
-                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                        <div className="flex items-center gap-2 mb-1">
-                          <CloudSun size={12} className="text-indigo-200" />
-                          <span className="text-[10px] font-bold uppercase text-indigo-100">Cuaca & Kondisi</span>
-                        </div>
-                        <p className="text-xs leading-relaxed">{renderAiValue(aiInsights.weather) || "Siapkan payung untuk berjaga-jaga."}</p>
-                      </div>
-                    </div>
-                    <div className="space-y-3">
-                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                        <div className="flex items-center gap-2 mb-1">
-                          <MapPin size={12} className="text-indigo-200" />
-                          <span className="text-[10px] font-bold uppercase text-indigo-100">Rekomendasi</span>
-                        </div>
-                        <p className="text-xs leading-relaxed">{renderAiValue(aiInsights.recommendations) || "Jelajahi area sekitar."}</p>
-                      </div>
-                      <div className="bg-white/10 p-3 rounded-xl border border-white/10">
-                        <div className="flex items-center gap-2 mb-1">
-                          <CheckCircle2 size={12} className="text-indigo-200" />
-                          <span className="text-[10px] font-bold uppercase text-indigo-100">Tips Cepat</span>
-                        </div>
-                        <p className="text-xs leading-relaxed italic">"{renderAiValue(aiInsights.tips)}"</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-8 text-center space-y-2">
-                    <p className="text-xs text-indigo-100 font-medium">Menghubungkan ke Google AI untuk panduan perjalanan Anda...</p>
-                    {!import.meta.env.VITE_GEMINI_API_KEY && (
-                      <p className="text-[10px] text-indigo-300 italic">Peringatan: GEMINI_API_KEY belum terpasang di Netlify.</p>
-                    )}
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
         {/* Right Column: Timeline */}

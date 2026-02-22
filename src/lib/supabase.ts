@@ -22,6 +22,7 @@ CREATE TABLE stops (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- Aktifkan RLS (Row Level Security) jika perlu, 
--- atau buat kebijakan (Policy) agar semua orang bisa baca/tulis untuk demo.
+-- Kebijakan Akses (Agar aplikasi bisa baca/tulis tanpa login)
+ALTER TABLE stops ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Allow public access" ON stops FOR ALL USING (true) WITH CHECK (true);
 */
