@@ -14,7 +14,8 @@ import {
   Wifi,
   WifiOff,
   Sparkles,
-  CloudSun
+  CloudSun,
+  RefreshCw
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { format, parseISO, compareAsc } from 'date-fns';
@@ -165,13 +166,15 @@ export default function App() {
   const totalCost = stops.reduce((acc, stop) => acc + (stop.cost || 0), 0);
 
   // AI Insights Function
-  const fetchAiInsights = async (stop: Stop) => {
-    // 1. Check Cache First (Offline Support)
+  const fetchAiInsights = async (stop: Stop, force = false) => {
+    // 1. Check Cache First (unless forced)
     const cacheKey = `ai_cache_${stop.id}`;
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      setAiInsights(JSON.parse(cached));
-      return;
+    if (!force) {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        setAiInsights(JSON.parse(cached));
+        return;
+      }
     }
 
     // 2. If Offline and no cache, use Smart Fallback
@@ -186,14 +189,14 @@ export default function App() {
     try {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Berikan informasi singkat dan akurat untuk wisatawan yang akan ke: ${stop.title} (${stop.address}). 
-        Gunakan Google Search untuk mendapatkan:
-        1. Estimasi biaya (tiket masuk, parkir, makan).
-        2. Prakiraan cuaca singkat atau kondisi saat ini.
-        3. 2 Rekomendasi tempat menarik/kuliner terdekat.
-        4. Tips singkat (misal: waktu terbaik berkunjung).
+        contents: `Analisis mendalam untuk wisatawan ke: ${stop.title} (${stop.address}). 
+        Gunakan Google Search untuk memberikan data RIIL dan TERBARU:
+        1. costs: Estimasi biaya tiket masuk (jika ada), parkir, dan rata-rata harga makan per orang.
+        2. weather: Kondisi cuaca saat ini di lokasi tersebut dan saran pakaian.
+        3. recommendations: Sebutkan 2 nama tempat makan atau spot menarik spesifik di dekat sana.
+        4. tips: Berikan 1 tips unik yang hanya diketahui orang lokal tentang tempat ini.
         
-        PENTING: Setiap nilai dalam JSON harus berupa STRING tunggal, jangan gunakan objek bersarang.
+        PENTING: Jawab dalam Bahasa Indonesia. Setiap nilai harus STRING tunggal.
         Berikan jawaban dalam format JSON mentah dengan kunci: costs, weather, recommendations, tips. Jangan gunakan markdown.`,
         config: {
           tools: [{ googleSearch: {} }],
@@ -201,10 +204,11 @@ export default function App() {
         }
       });
       
-      const data = JSON.parse(response.text || '{}');
-      setAiInsights(data);
-      // Save to cache for offline use
-      localStorage.setItem(cacheKey, JSON.stringify(data));
+      const text = response.text || '{}';
+      const data = JSON.parse(text);
+      const finalData = { ...data, isFallback: false };
+      setAiInsights(finalData);
+      localStorage.setItem(cacheKey, JSON.stringify(finalData));
     } catch (error) {
       console.error("AI Insights Error:", error);
       const fallback = getSmartFallback(stop.title);
@@ -234,7 +238,8 @@ export default function App() {
       costs,
       weather: "Cek langit secara manual (Mode Offline)",
       recommendations: "Tanya warga lokal untuk spot terbaik.",
-      tips
+      tips,
+      isFallback: true
     };
   };
 
@@ -513,23 +518,41 @@ export default function App() {
                     <Sparkles size={16} className="text-white" />
                   </div>
                   <h3 className="text-sm font-bold uppercase tracking-widest">AI Smart Guide</h3>
-                  {isLoadingAi ? (
-                    <motion.div 
-                      animate={{ opacity: [0.4, 1, 0.4] }}
-                      transition={{ repeat: Infinity, duration: 1.5 }}
-                      className="ml-auto text-[10px] font-bold bg-white/10 px-2 py-0.5 rounded"
-                    >
-                      Mencari Info Terbaru...
-                    </motion.div>
-                  ) : !isOnline ? (
-                    <div className="ml-auto text-[8px] font-bold bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded border border-amber-500/30 uppercase">
-                      Mode Offline
-                    </div>
-                  ) : (
-                    <div className="ml-auto text-[8px] font-bold bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30 uppercase">
-                      Data Tersimpan
-                    </div>
-                  )}
+                  <div className="ml-auto flex items-center gap-2">
+                    {isLoadingAi ? (
+                      <motion.div 
+                        animate={{ opacity: [0.4, 1, 0.4] }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        className="text-[10px] font-bold bg-white/10 px-2 py-0.5 rounded"
+                      >
+                        Mencari...
+                      </motion.div>
+                    ) : (
+                      <>
+                        {!isOnline ? (
+                          <div className="text-[8px] font-bold bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded border border-amber-500/30 uppercase">
+                            Offline
+                          </div>
+                        ) : aiInsights?.isFallback ? (
+                          <div className="text-[8px] font-bold bg-red-500/20 text-red-200 px-2 py-0.5 rounded border border-red-500/30 uppercase">
+                            Data Dasar
+                          </div>
+                        ) : (
+                          <div className="text-[8px] font-bold bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30 uppercase">
+                            AI Aktif
+                          </div>
+                        )}
+                        <button 
+                          onClick={() => fetchAiInsights(nextStop, true)}
+                          disabled={isLoadingAi || !isOnline}
+                          className="p-1 hover:bg-white/10 rounded-lg transition-colors disabled:opacity-30"
+                          title="Perbarui info AI"
+                        >
+                          <RefreshCw size={14} className={cn(isLoadingAi && "animate-spin")} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
                 {aiInsights ? (
@@ -568,8 +591,11 @@ export default function App() {
                     </div>
                   </div>
                 ) : (
-                  <div className="py-8 text-center">
+                  <div className="py-8 text-center space-y-2">
                     <p className="text-xs text-indigo-100 font-medium">Menghubungkan ke Google AI untuk panduan perjalanan Anda...</p>
+                    {!import.meta.env.VITE_GEMINI_API_KEY && (
+                      <p className="text-[10px] text-indigo-300 italic">Peringatan: GEMINI_API_KEY belum terpasang di Netlify.</p>
+                    )}
                   </div>
                 )}
               </motion.div>
