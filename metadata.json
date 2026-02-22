@@ -1,6 +1,6 @@
 {
-  "name": "KitaTourAja - Cloud & Offline Travel Planner",
-  "description": "Asisten perjalanan pribadi dengan sinkronisasi cloud Supabase dan dukungan mode offline (LocalStorage). Siap di-deploy ke Netlify.",
+  "name": "KitaTourAja - Travel Planner bareng Kamu",
+  "description": "Asisten perjalanan pribadi Kita.",
   "requestFramePermissions": [
     "geolocation"
   ]

@@ -183,7 +183,7 @@ export default function App() {
                 </span>
               )}
             </div>
-            <p className="text-stone-500 text-xs md:text-sm font-medium">Rencana Liburan Cloud & Offline</p>
+            <p className="text-stone-500 text-xs md:text-sm font-medium">Yuk Liburan!</p>
           </div>
           <div className="text-right">
             <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Waktu Sekarang</p>
