@@ -24,7 +24,9 @@ import { Stop } from './types';
 import { cn } from './lib/utils';
 import { supabase } from './lib/supabase';
 
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
+const ai = new GoogleGenAI({ 
+  apiKey: import.meta.env.VITE_GEMINI_API_KEY || "" 
+});
 
 export default function App() {
   const [stops, setStops] = useState<Stop[]>([]);
@@ -164,7 +166,22 @@ export default function App() {
 
   // AI Insights Function
   const fetchAiInsights = async (stop: Stop) => {
-    if (!isOnline) return;
+    // 1. Check Cache First (Offline Support)
+    const cacheKey = `ai_cache_${stop.id}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      setAiInsights(JSON.parse(cached));
+      return;
+    }
+
+    // 2. If Offline and no cache, use Smart Fallback
+    if (!isOnline) {
+      const fallback = getSmartFallback(stop.title);
+      setAiInsights(fallback);
+      return;
+    }
+
+    // 3. If Online, fetch from Gemini
     setIsLoadingAi(true);
     try {
       const response = await ai.models.generateContent({
@@ -186,12 +203,39 @@ export default function App() {
       
       const data = JSON.parse(response.text || '{}');
       setAiInsights(data);
+      // Save to cache for offline use
+      localStorage.setItem(cacheKey, JSON.stringify(data));
     } catch (error) {
       console.error("AI Insights Error:", error);
-      setAiInsights({ tips: "Gunakan Google Maps untuk informasi terbaru mengenai lokasi ini." });
+      const fallback = getSmartFallback(stop.title);
+      setAiInsights(fallback);
     } finally {
       setIsLoadingAi(false);
     }
+  };
+
+  const getSmartFallback = (title: string) => {
+    const t = title.toLowerCase();
+    let tips = "Siapkan peta offline dan air minum.";
+    let costs = "Siapkan uang tunai untuk parkir/jajan.";
+    
+    if (t.includes('pantai')) {
+      tips = "Bawa sunblock, baju ganti, dan kacamata hitam.";
+      costs = "Biasanya ada biaya parkir & sewa payung.";
+    } else if (t.includes('candi') || t.includes('museum')) {
+      tips = "Gunakan sepatu nyaman dan bawa topi.";
+      costs = "Siapkan biaya tiket masuk (biasanya Rp 20rb - 100rb).";
+    } else if (t.includes('makan') || t.includes('resto') || t.includes('kuliner')) {
+      tips = "Cek ulasan terbaru untuk menu andalan.";
+      costs = "Estimasi Rp 50rb - 150rb per orang.";
+    }
+
+    return {
+      costs,
+      weather: "Cek langit secara manual (Mode Offline)",
+      recommendations: "Tanya warga lokal untuk spot terbaik.",
+      tips
+    };
   };
 
   const renderAiValue = (val: any) => {
@@ -469,7 +513,7 @@ export default function App() {
                     <Sparkles size={16} className="text-white" />
                   </div>
                   <h3 className="text-sm font-bold uppercase tracking-widest">AI Smart Guide</h3>
-                  {isLoadingAi && (
+                  {isLoadingAi ? (
                     <motion.div 
                       animate={{ opacity: [0.4, 1, 0.4] }}
                       transition={{ repeat: Infinity, duration: 1.5 }}
@@ -477,6 +521,14 @@ export default function App() {
                     >
                       Mencari Info Terbaru...
                     </motion.div>
+                  ) : !isOnline ? (
+                    <div className="ml-auto text-[8px] font-bold bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded border border-amber-500/30 uppercase">
+                      Mode Offline
+                    </div>
+                  ) : (
+                    <div className="ml-auto text-[8px] font-bold bg-emerald-500/20 text-emerald-200 px-2 py-0.5 rounded border border-emerald-500/30 uppercase">
+                      Data Tersimpan
+                    </div>
                   )}
                 </div>
 
